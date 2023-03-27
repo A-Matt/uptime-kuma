@@ -1,6 +1,7 @@
 <template>
     <transition name="slide-fade" appear>
         <div v-if="monitor">
+            <router-link v-if="group !== ''" :to="monitorURL(monitor.parent)"> {{ group }}</router-link>
             <h1> {{ monitor.name }}</h1>
             <p v-if="monitor.description">{{ monitor.description }}</p>
             <div class="tags">
@@ -25,7 +26,7 @@
                     <button v-if="monitor.active" class="btn btn-normal" @click="pauseDialog">
                         <font-awesome-icon icon="pause" /> {{ $t("Pause") }}
                     </button>
-                    <button v-if="! monitor.active" class="btn btn-primary" @click="resumeMonitor">
+                    <button v-if="! monitor.active" class="btn btn-primary" :disabled="monitor.forceInactive" @click="resumeMonitor">
                         <font-awesome-icon icon="play" /> {{ $t("Resume") }}
                     </button>
                     <router-link :to=" '/edit/' + monitor.id " class="btn btn-normal">
@@ -193,6 +194,7 @@ import Pagination from "v-pagination-3";
 const PingChart = defineAsyncComponent(() => import("../components/PingChart.vue"));
 import Tag from "../components/Tag.vue";
 import CertificateInfo from "../components/CertificateInfo.vue";
+import { getMonitorRelativeURL } from "../util.ts";
 
 export default {
     components: {
@@ -290,6 +292,13 @@ export default {
             const endIndex = startIndex + this.perPage;
             return this.heartBeatList.slice(startIndex, endIndex);
         },
+
+        group() {
+            if (!this.monitor.pathName.includes("/")) {
+                return "";
+            }
+            return this.monitor.pathName.substr(0, this.monitor.pathName.lastIndexOf("/"));
+        }
     },
     mounted() {
 
@@ -381,6 +390,15 @@ export default {
             }
 
             return this.$t(translationPrefix + "Ping");
+        },
+
+        /**
+         * Get URL of monitor
+         * @param {number} id ID of monitor
+         * @returns {string} Relative URL of monitor
+         */
+        monitorURL(id) {
+            return getMonitorRelativeURL(id);
         },
     },
 };
