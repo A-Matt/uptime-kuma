@@ -688,7 +688,7 @@ let needSetup = false;
                 }
 
                 // Reset Prometheus labels
-                server.monitorList[monitor.id]?.prometheus()?.remove();
+                // server.monitorList[monitor.id]?.prometheus()?.remove();
 
                 bean.name = monitor.name;
                 bean.description = monitor.description;
