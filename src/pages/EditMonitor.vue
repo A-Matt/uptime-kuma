@@ -70,6 +70,16 @@
                                             Redis
                                         </option>
                                     </optgroup>
+
+                                    <!--
+                                    Hidden for now: Reason refer to Setting.vue
+                                    <optgroup :label="$t('Custom Monitor Type')">
+                                        <option value="browser">
+                                            (Beta) HTTP(s) - Browser Engine (Chrome/Firefox)
+                                        </option>
+                                    </optgroup>
+                                </select>
+                                -->
                                 </select>
                             </div>
 
@@ -80,7 +90,7 @@
                             </div>
 
                             <!-- URL -->
-                            <div v-if="monitor.type === 'http' || monitor.type === 'keyword' " class="my-3">
+                            <div v-if="monitor.type === 'http' || monitor.type === 'keyword' || monitor.type === 'browser' " class="my-3">
                                 <label for="url" class="form-label">{{ $t("URL") }}</label>
                                 <input id="url" v-model="monitor.url" type="url" class="form-control" pattern="https?://.+" required>
                             </div>
@@ -102,7 +112,7 @@
                             </div>
 
                             <!-- Keyword -->
-                            <div v-if="monitor.type === 'keyword' || monitor.type === 'grpc-keyword' " class="my-3">
+                            <div v-if="monitor.type === 'keyword' || monitor.type === 'grpc-keyword'" class="my-3">
                                 <label for="keyword" class="form-label">{{ $t("Keyword") }}</label>
                                 <input id="keyword" v-model="monitor.keyword" type="text" class="form-control" required>
                                 <div class="form-text">
@@ -330,7 +340,7 @@
 
                             <div class="my-3">
                                 <label for="resend-interval" class="form-label">
-                                    {{ $t("Resend Notification if Down X times consequently") }}
+                                    {{ $t("Resend Notification if Down X times consecutively") }}
                                     <span v-if="monitor.resendInterval > 0">({{ $t("resendEveryXTimes", [ monitor.resendInterval ]) }})</span>
                                     <span v-else>({{ $t("resendDisabled") }})</span>
                                 </label>
@@ -404,12 +414,14 @@
                                 </div>
                             </template>
 
+                            <!-- Description -->
                             <div class="my-3">
-                                <tags-manager ref="tagsManager" :pre-selected-tags="monitor.tags"></tags-manager>
+                                <label for="description" class="form-label">{{ $t("Description") }}</label>
+                                <input id="description" v-model="monitor.description" type="text" class="form-control">
                             </div>
 
-                            <div class="mt-5 mb-1">
-                                <button id="monitor-submit-btn" class="btn btn-primary" type="submit" :disabled="processing">{{ $t("Save") }}</button>
+                            <div class="my-3">
+                                <tags-manager ref="tagsManager" :pre-selected-tags="monitor.tags"></tags-manager>
                             </div>
                         </div>
 
@@ -497,6 +509,15 @@
                                     </select>
                                 </div>
 
+                                <!-- Encoding -->
+                                <div class="my-3">
+                                    <label for="httpBodyEncoding" class="form-label">{{ $t("Body Encoding") }}</label>
+                                    <select id="httpBodyEncoding" v-model="monitor.httpBodyEncoding" class="form-select">
+                                        <option value="json">JSON</option>
+                                        <option value="xml">XML</option>
+                                    </select>
+                                </div>
+
                                 <!-- Body -->
                                 <div class="my-3">
                                     <label for="body" class="form-label">{{ $t("Body") }}</label>
@@ -525,28 +546,47 @@
                                         <option value="ntlm">
                                             NTLM
                                         </option>
+                                        <option value="mtls">
+                                            mTLS
+                                        </option>
                                     </select>
                                 </div>
                                 <template v-if="monitor.authMethod && monitor.authMethod !== null ">
-                                    <div class="my-3">
-                                        <label for="basicauth" class="form-label">{{ $t("Username") }}</label>
-                                        <input id="basicauth-user" v-model="monitor.basic_auth_user" type="text" class="form-control" :placeholder="$t('Username')">
-                                    </div>
-
-                                    <div class="my-3">
-                                        <label for="basicauth" class="form-label">{{ $t("Password") }}</label>
-                                        <input id="basicauth-pass" v-model="monitor.basic_auth_pass" type="password" autocomplete="new-password" class="form-control" :placeholder="$t('Password')">
-                                    </div>
-                                    <template v-if="monitor.authMethod === 'ntlm' ">
+                                    <template v-if="monitor.authMethod === 'mtls' ">
                                         <div class="my-3">
-                                            <label for="basicauth" class="form-label">{{ $t("Domain") }}</label>
-                                            <input id="basicauth-domain" v-model="monitor.authDomain" type="text" class="form-control" :placeholder="$t('Domain')">
+                                            <label for="tls-cert" class="form-label">{{ $t("Cert") }}</label>
+                                            <textarea id="tls-cert" v-model="monitor.tlsCert" class="form-control" :placeholder="$t('Cert body')" required></textarea>
+                                        </div>
+                                        <div class="my-3">
+                                            <label for="tls-key" class="form-label">{{ $t("Key") }}</label>
+                                            <textarea id="tls-key" v-model="monitor.tlsKey" class="form-control" :placeholder="$t('Key body')" required></textarea>
+                                        </div>
+                                        <div class="my-3">
+                                            <label for="tls-ca" class="form-label">{{ $t("CA") }}</label>
+                                            <textarea id="tls-ca" v-model="monitor.tlsCa" class="form-control" :placeholder="$t('Server CA')"></textarea>
+                                        </div>
+                                    </template>
+                                    <template v-else>
+                                        <div class="my-3">
+                                            <label for="basicauth-user" class="form-label">{{ $t("Username") }}</label>
+                                            <input id="basicauth-user" v-model="monitor.basic_auth_user" type="text" class="form-control" :placeholder="$t('Username')">
                                         </div>
 
                                         <div class="my-3">
-                                            <label for="basicauth" class="form-label">{{ $t("Workstation") }}</label>
-                                            <input id="basicauth-workstation" v-model="monitor.authWorkstation" type="text" class="form-control" :placeholder="$t('Workstation')">
+                                            <label for="basicauth-pass" class="form-label">{{ $t("Password") }}</label>
+                                            <input id="basicauth-pass" v-model="monitor.basic_auth_pass" type="password" autocomplete="new-password" class="form-control" :placeholder="$t('Password')">
                                         </div>
+                                        <template v-if="monitor.authMethod === 'ntlm' ">
+                                            <div class="my-3">
+                                                <label for="ntlm-domain" class="form-label">{{ $t("Domain") }}</label>
+                                                <input id="ntlm-domain" v-model="monitor.authDomain" type="text" class="form-control" :placeholder="$t('Domain')">
+                                            </div>
+
+                                            <div class="my-3">
+                                                <label for="ntlm-workstation" class="form-label">{{ $t("Workstation") }}</label>
+                                                <input id="ntlm-workstation" v-model="monitor.authWorkstation" type="text" class="form-control" :placeholder="$t('Workstation')">
+                                            </div>
+                                        </template>
                                     </template>
                                 </template>
                             </template>
@@ -600,6 +640,10 @@
                                 </template>
                             </template>
                         </div>
+                    </div>
+
+                    <div class="fixed-bottom-bar p-3">
+                        <button id="monitor-submit-btn" class="btn btn-primary" type="submit" :disabled="processing">{{ $t("Save") }}</button>
                     </div>
                 </div>
             </form>
@@ -663,11 +707,21 @@ export default {
         },
 
         pageName() {
-            return this.$t((this.isAdd) ? "Add New Monitor" : "Edit");
+            let name = "Add New Monitor";
+            if (this.isClone) {
+                name = "Clone Monitor";
+            } else if (this.isEdit) {
+                name = "Edit";
+            }
+            return this.$t(name);
         },
 
         isAdd() {
             return this.$route.path === "/add";
+        },
+
+        isClone() {
+            return this.$route.path.startsWith("/clone");
         },
 
         isEdit() {
@@ -713,6 +767,15 @@ message HealthCheckResponse {
             ` ]);
         },
         bodyPlaceholder() {
+            if (this.monitor && this.monitor.httpBodyEncoding && this.monitor.httpBodyEncoding === "xml") {
+                return this.$t("Example:", [ `
+<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <Uptime>Kuma</Uptime>
+  </soap:Body>
+</soap:Envelope>` ]);
+            }
             return this.$t("Example:", [ `
 {
     "key": "value"
@@ -862,6 +925,7 @@ message HealthCheckResponse {
                     mqttTopic: "",
                     mqttSuccessMessage: "",
                     authMethod: null,
+                    httpBodyEncoding: "json"
                 };
 
                 if (this.$root.proxyList && !this.monitor.proxyId) {
@@ -877,10 +941,39 @@ message HealthCheckResponse {
                         this.monitor.notificationIDList[this.$root.notificationList[i].id] = true;
                     }
                 }
-            } else if (this.isEdit) {
+            } else if (this.isEdit || this.isClone) {
                 this.$root.getSocket().emit("getMonitor", this.$route.params.id, (res) => {
                     if (res.ok) {
+
+                        if (this.isClone) {
+                            // Reset push token for cloned monitors
+                            if (res.monitor.type === "push") {
+                                res.monitor.pushToken = undefined;
+                            }
+                        }
+
                         this.monitor = res.monitor;
+
+                        if (this.isClone) {
+                            /*
+                         * Cloning a monitor will include properties that can not be posted to backend
+                         * as they are not valid columns in the SQLite table.
+                         */
+                            this.monitor.id = undefined; // Remove id when cloning as we want a new id
+                            this.monitor.includeSensitiveData = undefined;
+                            this.monitor.maintenance = undefined;
+                            this.monitor.name = this.$t("cloneOf", [ this.monitor.name ]);
+                            this.$refs.tagsManager.newTags = this.monitor.tags.map((monitorTag) => {
+                                return {
+                                    id: monitorTag.tag_id,
+                                    name: monitorTag.name,
+                                    color: monitorTag.color,
+                                    value: monitorTag.value,
+                                    new: true,
+                                };
+                            });
+                            this.monitor.tags = undefined;
+                        }
 
                         // Handling for monitors that are created before 1.7.0
                         if (this.monitor.retryInterval === 0) {
@@ -899,7 +992,7 @@ message HealthCheckResponse {
          * @returns {boolean} Is the form input valid?
          */
         isInputValid() {
-            if (this.monitor.body) {
+            if (this.monitor.body && (!this.monitor.httpBodyEncoding || this.monitor.httpBodyEncoding === "json")) {
                 try {
                     JSON.parse(this.monitor.body);
                 } catch (err) {
@@ -923,6 +1016,7 @@ message HealthCheckResponse {
          * @returns {void}
          */
         async submit() {
+
             this.processing = true;
 
             if (!this.isInputValid()) {
@@ -930,16 +1024,28 @@ message HealthCheckResponse {
                 return;
             }
 
-            // Beautify the JSON format
-            if (this.monitor.body) {
+            // Beautify the JSON format (only if httpBodyEncoding is not set or === json)
+            if (this.monitor.body && (!this.monitor.httpBodyEncoding || this.monitor.httpBodyEncoding === "json")) {
                 this.monitor.body = JSON.stringify(JSON.parse(this.monitor.body), null, 4);
+            }
+
+            if (this.monitor.type && this.monitor.type !== "http" && this.monitor.type !== "keyword") {
+                this.monitor.httpBodyEncoding = null;
             }
 
             if (this.monitor.headers) {
                 this.monitor.headers = JSON.stringify(JSON.parse(this.monitor.headers), null, 4);
             }
 
-            if (this.isAdd) {
+            if (this.monitor.hostname) {
+                this.monitor.hostname = this.monitor.hostname.trim();
+            }
+
+            if (this.monitor.url) {
+                this.monitor.url = this.monitor.url.trim();
+            }
+
+            if (this.isAdd || this.isClone) {
                 this.$root.add(this.monitor, async (res) => {
 
                     if (res.ok) {
@@ -994,11 +1100,33 @@ message HealthCheckResponse {
 </script>
 
 <style lang="scss" scoped>
+    @import "../assets/vars.scss";
+
+    $padding: 20px;
+
     .shadow-box {
-        padding: 20px;
+        padding-top: $padding;
+        padding-bottom: 0;
+        padding-right: $padding;
+        padding-left: $padding;
     }
 
     textarea {
         min-height: 200px;
+    }
+
+    .fixed-bottom-bar {
+        position: sticky;
+        bottom: 0;
+        margin-left: -$padding;
+        margin-right: -$padding;
+        z-index: 100;
+        background-color: rgba(white, 0.2);
+        backdrop-filter: blur(2px);
+        border-radius: 0 0 10px 10px;
+
+        .dark & {
+            background-color: rgba($dark-header-bg, 0.9);
+        }
     }
 </style>

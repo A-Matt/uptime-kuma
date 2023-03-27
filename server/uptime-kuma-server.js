@@ -10,6 +10,7 @@ const util = require("util");
 const { CacheableDnsHttpAgent } = require("./cacheable-dns-http-agent");
 const { Settings } = require("./settings");
 const dayjs = require("dayjs");
+const { PluginsManager } = require("./plugins-manager");
 // DO NOT IMPORT HERE IF THE MODULES USED `UptimeKumaServer.getInstance()`
 
 /**
@@ -48,6 +49,20 @@ class UptimeKumaServer {
 
     generateMaintenanceTimeslotsInterval = undefined;
 
+    /**
+     * Plugins Manager
+     * @type {PluginsManager}
+     */
+    pluginsManager = null;
+
+    /**
+     *
+     * @type {{}}
+     */
+    static monitorTypeList = {
+
+    };
+
     static getInstance(args) {
         if (UptimeKumaServer.instance == null) {
             UptimeKumaServer.instance = new UptimeKumaServer(args);
@@ -59,6 +74,7 @@ class UptimeKumaServer {
         // SSL
         const sslKey = args["ssl-key"] || process.env.UPTIME_KUMA_SSL_KEY || process.env.SSL_KEY || undefined;
         const sslCert = args["ssl-cert"] || process.env.UPTIME_KUMA_SSL_CERT || process.env.SSL_CERT || undefined;
+        const sslKeyPassphrase = args["ssl-key-passphrase"] || process.env.UPTIME_KUMA_SSL_KEY_PASSPHRASE || process.env.SSL_KEY_PASSPHRASE || undefined;
 
         log.info("server", "Creating express and socket.io instance");
         this.app = express();
@@ -66,7 +82,8 @@ class UptimeKumaServer {
             log.info("server", "Server Type: HTTPS");
             this.httpServer = https.createServer({
                 key: fs.readFileSync(sslKey),
-                cert: fs.readFileSync(sslCert)
+                cert: fs.readFileSync(sslCert),
+                passphrase: sslKeyPassphrase,
             }, this.app);
         } else {
             log.info("server", "Server Type: HTTP");
@@ -256,6 +273,11 @@ class UptimeKumaServer {
 
     /** Load the timeslots for maintenance */
     async generateMaintenanceTimeslots() {
+        log.debug("maintenance", "Routine: Generating Maintenance Timeslots");
+
+        // Prevent #2776
+        // Remove duplicate maintenance_timeslot with same start_date, end_date and maintenance_id
+        await R.exec("DELETE FROM maintenance_timeslot WHERE id NOT IN (SELECT MIN(id) FROM maintenance_timeslot GROUP BY start_date, end_date, maintenance_id)");
 
         let list = await R.find("maintenance_timeslot", " generated_next = 0 AND start_date <= DATETIME('now') ");
 
@@ -272,6 +294,46 @@ class UptimeKumaServer {
     async stop() {
         clearTimeout(this.generateMaintenanceTimeslotsInterval);
     }
+
+    loadPlugins() {
+        this.pluginsManager = new PluginsManager(this);
+    }
+
+    /**
+     *
+     * @returns {PluginsManager}
+     */
+    getPluginManager() {
+        return this.pluginsManager;
+    }
+
+    /**
+     *
+     * @param {MonitorType} monitorType
+     */
+    addMonitorType(monitorType) {
+        if (monitorType instanceof MonitorType && monitorType.name) {
+            if (monitorType.name in UptimeKumaServer.monitorTypeList) {
+                log.error("", "Conflict Monitor Type name");
+            }
+            UptimeKumaServer.monitorTypeList[monitorType.name] = monitorType;
+        } else {
+            log.error("", "Invalid Monitor Type: " + monitorType.name);
+        }
+    }
+
+    /**
+     *
+     * @param {MonitorType} monitorType
+     */
+    removeMonitorType(monitorType) {
+        if (UptimeKumaServer.monitorTypeList[monitorType.name] === monitorType) {
+            delete UptimeKumaServer.monitorTypeList[monitorType.name];
+        } else {
+            log.error("", "Remove MonitorType failed: " + monitorType.name);
+        }
+    }
+
 }
 
 module.exports = {
@@ -280,3 +342,4 @@ module.exports = {
 
 // Must be at the end
 const MaintenanceTimeslot = require("./model/maintenance_timeslot");
+const { MonitorType } = require("./monitor-types/monitor-type");
