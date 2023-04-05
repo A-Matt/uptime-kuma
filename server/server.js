@@ -1636,6 +1636,9 @@ async function afterLogin(socket, user) {
 
     await sleep(500);
 
+    // Try to resend data
+    monitorList = await server.sendMonitorList(socket);
+
     await StatusPage.sendStatusPageList(io, socket);
 
     for (let monitorID in monitorList) {
