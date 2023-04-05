@@ -75,13 +75,14 @@ class Database {
         "patch-api-key-table.sql": true,
         "patch-monitor-tls.sql": true,
         "patch-add-parent-monitor.sql": true,
+        "patch-oh-fuck-i-messedup.sql": true,
     };
 
     /**
      * The final version should be 10 after merged tag feature
      * @deprecated Use patchList for any new feature
      */
-    static latestVersion = 10;
+    static latestVersion = 10.1;
 
     static noReject = true;
 
