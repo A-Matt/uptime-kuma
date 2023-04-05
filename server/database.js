@@ -75,7 +75,6 @@ class Database {
         "patch-api-key-table.sql": true,
         "patch-monitor-tls.sql": true,
         "patch-add-parent-monitor.sql": true,
-        "patch-oh-fuck-i-messedup.sql": true,
     };
 
     /**
