@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS maintenance_timeslot;
+
 -- maintenance_timeslot
 CREATE TABLE [maintenance_timeslot] (
     [id] INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
