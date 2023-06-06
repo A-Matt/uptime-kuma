@@ -19,7 +19,7 @@
                 {{ $t("No Monitors, please") }} <router-link to="/add">{{ $t("add one") }}</router-link>
             </div>
 
-            <MonitorListItem v-for="(item, index) in sortedMonitorList" :key="index" :monitor="item" :isSearch="searchText !== ''" :title="item.description" />
+            <MonitorListItem v-for="(item, index) in sortedMonitorList" :key="index" :monitor="item" :isSearch="searchText !== ''" />
         </div>
     </div>
 </template>

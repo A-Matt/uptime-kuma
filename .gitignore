@@ -22,3 +22,6 @@ cypress/screenshots
 
 extra/exe-builder/bin
 extra/exe-builder/obj
+
+.vs
+.vscode
