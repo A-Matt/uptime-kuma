@@ -6,6 +6,18 @@ const { allowDevAllOrigin, sendHttpError } = require("../util-server");
 const { R } = require("redbean-node");
 const Monitor = require("../model/monitor");
 
+const AllowedIPList = [
+    "::1",                  // Localhost
+
+    "194.107.249.101",      // SW19 01
+    "194.107.250.197",      // SW19 02
+    "217.138.85.169",       // SW19 03
+
+    "109.224.192.150",      // RG5 01
+
+    "86.26.185.6",          // Alex Matthews - Home
+];
+
 let router = express.Router();
 
 let cache = apicache.middleware;
@@ -13,6 +25,16 @@ const server = UptimeKumaServer.getInstance();
 
 router.get("/status/:slug", cache("5 minutes"), async (request, response) => {
     let slug = request.params.slug;
+
+    // check if IP is in Allowed list.
+    const clientIP = request.headers["x-forwarded-for"] || request.connection.remoteAddress;
+    const passwordParam = request.query.password;
+
+    if (AllowedIPList.indexOf(clientIP) === -1 && passwordParam !== "Z1P7amwLfh6AcIxcu75kLqyccW1L") {
+        response.status(401).send("Please provide the access password as you are not accessing from a Secured IP. You can request for the Password from the IT Team at SW19 or Dev Team at RG5.");
+        return;
+    }
+
     await StatusPage.handleStatusPageResponse(response, server.indexHTML, slug);
 });
 
