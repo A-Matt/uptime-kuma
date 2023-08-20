@@ -11,6 +11,9 @@ dayjs.extend(require("dayjs/plugin/utc"));
 dayjs.extend(require("./modules/dayjs/plugin/timezone"));
 dayjs.extend(require("dayjs/plugin/customParseFormat"));
 
+// Load environment variables from `.env`
+require("dotenv").config();
+
 // Check Node.js Version
 const nodeVersion = parseInt(process.versions.node.split(".")[0]);
 const requiredVersion = 14;
@@ -138,6 +141,7 @@ const { maintenanceSocketHandler } = require("./socket-handlers/maintenance-sock
 const { generalSocketHandler } = require("./socket-handlers/general-socket-handler");
 const { Settings } = require("./settings");
 const { CacheableDnsHttpAgent } = require("./cacheable-dns-http-agent");
+const { pluginsHandler } = require("./socket-handlers/plugins-handler");
 
 app.use(express.json());
 
@@ -166,7 +170,7 @@ let needSetup = false;
     Database.init(args);
     await initDatabase(testMode);
     await server.initAfterDatabaseReady();
-
+    server.loadPlugins();
     server.entryPage = await Settings.get("entryPage");
     await StatusPage.loadDomainMappingList();
 
@@ -574,7 +578,6 @@ let needSetup = false;
                     });
                 }
             } catch (error) {
-                console.log(error);
                 callback({
                     ok: false,
                     msg: error.message,
@@ -1501,6 +1504,7 @@ let needSetup = false;
         dockerSocketHandler(socket);
         maintenanceSocketHandler(socket);
         generalSocketHandler(socket, server);
+        pluginsHandler(socket, server);
 
         log.debug("server", "added all socket handlers");
 

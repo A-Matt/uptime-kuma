@@ -70,6 +70,16 @@
                                             Redis
                                         </option>
                                     </optgroup>
+
+                                    <!--
+                                    Hidden for now: Reason refer to Setting.vue
+                                    <optgroup :label="$t('Custom Monitor Type')">
+                                        <option value="browser">
+                                            (Beta) HTTP(s) - Browser Engine (Chrome/Firefox)
+                                        </option>
+                                    </optgroup>
+                                </select>
+                                -->
                                 </select>
                             </div>
 
@@ -80,7 +90,7 @@
                             </div>
 
                             <!-- URL -->
-                            <div v-if="monitor.type === 'http' || monitor.type === 'keyword' " class="my-3">
+                            <div v-if="monitor.type === 'http' || monitor.type === 'keyword' || monitor.type === 'browser' " class="my-3">
                                 <label for="url" class="form-label">{{ $t("URL") }}</label>
                                 <input id="url" v-model="monitor.url" type="url" class="form-control" pattern="https?://.+" required>
                             </div>
@@ -102,7 +112,7 @@
                             </div>
 
                             <!-- Keyword -->
-                            <div v-if="monitor.type === 'keyword' || monitor.type === 'grpc-keyword' " class="my-3">
+                            <div v-if="monitor.type === 'keyword' || monitor.type === 'grpc-keyword'" class="my-3">
                                 <label for="keyword" class="form-label">{{ $t("Keyword") }}</label>
                                 <input id="keyword" v-model="monitor.keyword" type="text" class="form-control" required>
                                 <div class="form-text">
@@ -330,7 +340,7 @@
 
                             <div class="my-3">
                                 <label for="resend-interval" class="form-label">
-                                    {{ $t("Resend Notification if Down X times consequently") }}
+                                    {{ $t("Resend Notification if Down X times consecutively") }}
                                     <span v-if="monitor.resendInterval > 0">({{ $t("resendEveryXTimes", [ monitor.resendInterval ]) }})</span>
                                     <span v-else>({{ $t("resendDisabled") }})</span>
                                 </label>
@@ -406,10 +416,6 @@
 
                             <div class="my-3">
                                 <tags-manager ref="tagsManager" :pre-selected-tags="monitor.tags"></tags-manager>
-                            </div>
-
-                            <div class="mt-5 mb-1">
-                                <button id="monitor-submit-btn" class="btn btn-primary" type="submit" :disabled="processing">{{ $t("Save") }}</button>
                             </div>
                         </div>
 
@@ -599,6 +605,10 @@
                                     </div>
                                 </template>
                             </template>
+                        </div>
+
+                        <div class="col-md-12 mt-5 mb-1">
+                            <button id="monitor-submit-btn" class="btn btn-primary" type="submit" :disabled="processing">{{ $t("Save") }}</button>
                         </div>
                     </div>
                 </div>
@@ -937,6 +947,14 @@ message HealthCheckResponse {
 
             if (this.monitor.headers) {
                 this.monitor.headers = JSON.stringify(JSON.parse(this.monitor.headers), null, 4);
+            }
+
+            if (this.monitor.hostname) {
+                this.monitor.hostname = this.monitor.hostname.trim();
+            }
+
+            if (this.monitor.url) {
+                this.monitor.url = this.monitor.url.trim();
             }
 
             if (this.isAdd) {
