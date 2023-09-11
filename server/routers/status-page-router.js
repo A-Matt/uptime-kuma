@@ -15,7 +15,7 @@ const AllowedIPList = [
 
     "109.224.192.150",      // RG5 01
 
-    "86.26.185.6",          // Alex Matthews - Home
+    "82.12.11.136",          // Alex Matthews - Home
 ];
 
 let router = express.Router();
@@ -27,7 +27,7 @@ router.get("/status/:slug", cache("5 minutes"), async (request, response) => {
     let slug = request.params.slug;
 
     // check if IP is in Allowed list.
-    const clientIP = request.headers["x-forwarded-for"] || request.connection.remoteAddress;
+    const clientIP = request.headers["x-forwarded-for"] || request.socket.remoteAddress || request.connection.remoteAddress;
     const passwordParam = request.query.password;
 
     if (AllowedIPList.indexOf(clientIP) === -1 && passwordParam !== "Z1P7amwLfh6AcIxcu75kLqyccW1L") {
