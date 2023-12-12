@@ -5,6 +5,7 @@ export default {
             system: (window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light",
             userTheme: localStorage.theme,
             userHeartbeatBar: localStorage.heartbeatBarTheme,
+            styleElapsedTime: localStorage.styleElapsedTime,
             statusPageTheme: "light",
             forceStatusPageTheme: false,
             path: "",
@@ -22,6 +23,11 @@ export default {
             this.userHeartbeatBar = "normal";
         }
 
+        // Default Elapsed Time Style
+        if (!this.styleElapsedTime) {
+            this.styleElapsedTime = "no-line";
+        }
+
         document.body.classList.add(this.theme);
         this.updateThemeColorMeta();
     },
@@ -30,6 +36,9 @@ export default {
         theme() {
             // As entry can be status page now, set forceStatusPageTheme to true to use status page theme
             if (this.forceStatusPageTheme) {
+                if (this.statusPageTheme === "auto") {
+                    return this.system;
+                }
                 return this.statusPageTheme;
             }
 
@@ -63,6 +72,10 @@ export default {
 
         userTheme(to, from) {
             localStorage.theme = to;
+        },
+
+        styleElapsedTime(to, from) {
+            localStorage.styleElapsedTime = to;
         },
 
         theme(to, from) {

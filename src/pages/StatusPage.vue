@@ -54,6 +54,12 @@
                     <label class="form-check-label" for="show-powered-by">{{ $t("Show Powered By") }}</label>
                 </div>
 
+                <!-- Show certificate expiry -->
+                <div class="my-3 form-check form-switch">
+                    <input id="show-certificate-expiry" v-model="config.showCertificateExpiry" class="form-check-input" type="checkbox">
+                    <label class="form-check-label" for="show-certificate-expiry">{{ $t("showCertificateExpiry") }}</label>
+                </div>
+
                 <div v-if="false" class="my-3">
                     <label for="password" class="form-label">{{ $t("Password") }} <sup>{{ $t("Coming Soon") }}</sup></label>
                     <input id="password" v-model="config.password" disabled type="password" autocomplete="new-password" class="form-control">
@@ -63,13 +69,17 @@
                 <div class="my-3">
                     <label class="form-label">
                         {{ $t("Domain Names") }}
-                        <font-awesome-icon icon="plus-circle" class="btn-add-domain action text-primary" @click="addDomainField" />
+                        <button class="p-0 bg-transparent border-0" :aria-label="$t('Add a domain')" @click="addDomainField">
+                            <font-awesome-icon icon="plus-circle" class="action text-primary" />
+                        </button>
                     </label>
 
                     <ul class="list-group domain-name-list">
                         <li v-for="(domain, index) in config.domainNameList" :key="index" class="list-group-item">
                             <input v-model="config.domainNameList[index]" type="text" class="no-bg domain-input" placeholder="example.com" />
-                            <font-awesome-icon icon="times" class="action remove ms-2 me-3 text-danger" @click="removeDomain(index)" />
+                            <button class="p-0 bg-transparent border-0" :aria-label="$t('Remove domain', [ domain ])" @click="removeDomain(index)">
+                                <font-awesome-icon icon="times" class="action remove ms-2 me-3 text-danger" />
+                            </button>
                         </li>
                     </ul>
                 </div>
@@ -96,7 +106,7 @@
 
             <!-- Sidebar Footer -->
             <div class="sidebar-footer">
-                <button class="btn btn-success me-2" @click="save">
+                <button class="btn btn-success me-2" :disabled="loading" @click="save">
                     <font-awesome-icon icon="save" />
                     {{ $t("Save") }}
                 </button>
@@ -309,7 +319,7 @@
                     👀 {{ $t("statusPageNothing") }}
                 </div>
 
-                <PublicGroupList :edit-mode="enableEditMode" :show-tags="config.showTags" />
+                <PublicGroupList :edit-mode="enableEditMode" :show-tags="config.showTags" :show-certificate-expiry="config.showCertificateExpiry" />
             </div>
 
             <footer class="mt-5 mb-4">
@@ -325,7 +335,7 @@
                 </p>
 
                 <div class="refresh-info mb-2">
-                    <div>{{ $t("Last Updated") }}: <date-time :value="lastUpdateTime" /></div>
+                    <div>{{ $t("Last Updated") }}:  {{ lastUpdateTimeDisplay }}</div>
                     <div>{{ $tc("statusPageRefreshIn", [ updateCountdownText]) }}</div>
                 </div>
             </footer>
@@ -360,7 +370,6 @@ import DOMPurify from "dompurify";
 import Confirm from "../components/Confirm.vue";
 import PublicGroupList from "../components/PublicGroupList.vue";
 import MaintenanceTime from "../components/MaintenanceTime.vue";
-import DateTime from "../components/Datetime.vue";
 import { getResBaseURL } from "../util-frontend";
 import { STATUS_PAGE_ALL_DOWN, STATUS_PAGE_ALL_UP, STATUS_PAGE_MAINTENANCE, STATUS_PAGE_PARTIAL_DOWN, UP, MAINTENANCE } from "../util.ts";
 import Tag from "../components/Tag.vue";
@@ -386,7 +395,6 @@ export default {
         Confirm,
         PrismEditor,
         MaintenanceTime,
-        DateTime,
         Tag,
         VueMultiselect
     },
@@ -434,6 +442,7 @@ export default {
             lastUpdateTime: dayjs(),
             updateCountdown: null,
             updateCountdownText: null,
+            loading: true,
         };
     },
     computed: {
@@ -583,6 +592,10 @@ export default {
                 return "";
             }
         },
+
+        lastUpdateTimeDisplay() {
+            return this.$root.datetime(this.lastUpdateTime);
+        }
     },
     watch: {
 
@@ -689,6 +702,8 @@ export default {
             this.incident = res.data.incident;
             this.maintenanceList = res.data.maintenanceList;
             this.$root.publicGroupList = res.data.publicGroupList;
+
+            this.loading = false;
         }).catch( function (error) {
             if (error.response.status === 404) {
                 location.href = "/page-not-found";
@@ -798,6 +813,7 @@ export default {
 
         /** Save the status page */
         save() {
+            this.loading = true;
             let startTime = new Date();
             this.config.slug = this.config.slug.trim().toLowerCase();
 
@@ -815,10 +831,12 @@ export default {
                     }
 
                     setTimeout(() => {
+                        this.loading = false;
                         location.href = "/status/" + this.config.slug;
                     }, time);
 
                 } else {
+                    this.loading = false;
                     toast.error(res.msg);
                 }
             });

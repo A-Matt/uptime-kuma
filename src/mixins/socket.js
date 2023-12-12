@@ -4,6 +4,7 @@ import jwtDecode from "jwt-decode";
 import Favico from "favico.js";
 import dayjs from "dayjs";
 import { DOWN, MAINTENANCE, PENDING, UP } from "../util.ts";
+import { getDevContainerServerHostname, isDevContainer } from "../util-frontend.js";
 const toast = useToast();
 
 let socket;
@@ -47,7 +48,7 @@ export default {
             statusPageListLoaded: false,
             statusPageList: [],
             proxyList: [],
-            connectionErrorMsg: "Cannot connect to the socket server. Reconnecting...",
+            connectionErrorMsg: `${this.$t("Cannot connect to the socket server.")} ${this.$t("Reconnecting...")}`,
             showReverseProxyGuide: true,
             cloudflared: {
                 cloudflareTunnelToken: "",
@@ -56,7 +57,8 @@ export default {
                 message: "",
                 errorMessage: "",
                 currentPassword: "",
-            }
+            },
+            faviconUpdateDebounce: null,
         };
     },
 
@@ -89,19 +91,20 @@ export default {
 
             this.socket.initedSocketIO = true;
 
-            let protocol = (location.protocol === "https:") ? "wss://" : "ws://";
+            let protocol = location.protocol + "//";
 
-            let wsHost;
+            let url;
             const env = process.env.NODE_ENV || "production";
-            if (env === "development" || localStorage.dev === "dev") {
-                wsHost = protocol + location.hostname + ":3001";
+            if (env === "development" && isDevContainer()) {
+                url = protocol + getDevContainerServerHostname();
+            } else if (env === "development" || localStorage.dev === "dev") {
+                url = protocol + location.hostname + ":3001";
             } else {
-                wsHost = protocol + location.host;
+                // Connect to the current url
+                url = undefined;
             }
 
-            socket = io(wsHost, {
-                transports: [ "websocket" ],
-            });
+            socket = io(url);
 
             socket.on("info", (info) => {
                 this.info = info;
@@ -178,16 +181,18 @@ export default {
                 // Also toast
                 if (data.important) {
 
-                    if (data.status === 0) {
-                        toast.error(`[${this.monitorList[data.monitorID].name}] [DOWN] ${data.msg}`, {
-                            timeout: false,
-                        });
-                    } else if (data.status === 1) {
-                        toast.success(`[${this.monitorList[data.monitorID].name}] [Up] ${data.msg}`, {
-                            timeout: 20000,
-                        });
-                    } else {
-                        toast(`[${this.monitorList[data.monitorID].name}] ${data.msg}`);
+                    if (this.monitorList[data.monitorID] !== undefined) {
+                        if (data.status === 0) {
+                            toast.error(`[${this.monitorList[data.monitorID].name}] [DOWN] ${data.msg}`, {
+                                timeout: false,
+                            });
+                        } else if (data.status === 1) {
+                            toast.success(`[${this.monitorList[data.monitorID].name}] [Up] ${data.msg}`, {
+                                timeout: 20000,
+                            });
+                        } else {
+                            toast(`[${this.monitorList[data.monitorID].name}] ${data.msg}`);
+                        }
                     }
 
                     if (! (data.monitorID in this.importantHeartbeatList)) {
@@ -228,7 +233,7 @@ export default {
 
             socket.on("connect_error", (err) => {
                 console.error(`Failed to connect to the backend. Socket.io connect_error: ${err.message}`);
-                this.connectionErrorMsg = `Cannot connect to the socket server. [${err}] Reconnecting...`;
+                this.connectionErrorMsg = `${this.$t("Cannot connect to the socket server.")} [${err}] ${this.$t("Reconnecting...")}`;
                 this.showReverseProxyGuide = true;
                 this.socket.connected = false;
                 this.socket.firstConnect = false;
@@ -281,6 +286,10 @@ export default {
 
             socket.on("initServerTimezone", () => {
                 socket.emit("initServerTimezone", dayjs.tz.guess());
+            });
+
+            socket.on("refresh", () => {
+                location.reload();
             });
         },
 
@@ -693,9 +702,11 @@ export default {
 
         stats() {
             let result = {
+                active: 0,
                 up: 0,
                 down: 0,
                 maintenance: 0,
+                pending: 0,
                 unknown: 0,
                 pause: 0,
             };
@@ -707,12 +718,13 @@ export default {
                 if (monitor && ! monitor.active) {
                     result.pause++;
                 } else if (beat) {
+                    result.active++;
                     if (beat.status === UP) {
                         result.up++;
                     } else if (beat.status === DOWN) {
                         result.down++;
                     } else if (beat.status === PENDING) {
-                        result.up++;
+                        result.pending++;
                     } else if (beat.status === MAINTENANCE) {
                         result.maintenance++;
                     } else {
@@ -754,7 +766,12 @@ export default {
         // Update Badge
         "stats.down"(to, from) {
             if (to !== from) {
-                favicon.badge(to);
+                if (this.faviconUpdateDebounce != null) {
+                    clearTimeout(this.faviconUpdateDebounce);
+                }
+                this.faviconUpdateDebounce = setTimeout(() => {
+                    favicon.badge(to);
+                }, 1000);
             }
         },
 

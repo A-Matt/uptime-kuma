@@ -15,18 +15,25 @@ dayjs.extend(require("dayjs/plugin/customParseFormat"));
 require("dotenv").config();
 
 // Check Node.js Version
-const nodeVersion = parseInt(process.versions.node.split(".")[0]);
-const requiredVersion = 14;
+const nodeVersion = process.versions.node;
+
+// Get the required Node.js version from package.json
+const requiredNodeVersions = require("../package.json").engines.node;
+const bannedNodeVersions = " < 14 || 20.0.* || 20.1.* || 20.2.* || 20.3.* ";
 console.log(`Your Node.js version: ${nodeVersion}`);
 
-// See more: https://github.com/louislam/uptime-kuma/issues/3138
-if (nodeVersion >= 20) {
-    console.warn("\x1b[31m%s\x1b[0m", "Warning: Uptime Kuma is currently not stable on Node.js >= 20, please use Node.js 18.");
+const semver = require("semver");
+const requiredNodeVersionsComma = requiredNodeVersions.split("||").map((version) => version.trim()).join(", ");
+
+// Exit Uptime Kuma immediately if the Node.js version is banned
+if (semver.satisfies(nodeVersion, bannedNodeVersions)) {
+    console.error("\x1b[31m%s\x1b[0m", `Error: Your Node.js version: ${nodeVersion} is not supported, please upgrade your Node.js to ${requiredNodeVersionsComma}.`);
+    process.exit(-1);
 }
 
-if (nodeVersion < requiredVersion) {
-    console.error(`Error: Your Node.js version is not supported, please upgrade to Node.js >= ${requiredVersion}.`);
-    process.exit(-1);
+// Warning if the Node.js version is not in the support list, but it maybe still works
+if (!semver.satisfies(nodeVersion, requiredNodeVersions)) {
+    console.warn("\x1b[31m%s\x1b[0m", `Warning: Your Node.js version: ${nodeVersion} is not officially supported, please upgrade your Node.js to ${requiredNodeVersionsComma}.`);
 }
 
 const args = require("args-parser")(process.argv);
@@ -41,7 +48,16 @@ if (! process.env.NODE_ENV) {
     process.env.NODE_ENV = "production";
 }
 
+if (!process.env.UPTIME_KUMA_WS_ORIGIN_CHECK) {
+    process.env.UPTIME_KUMA_WS_ORIGIN_CHECK = "cors-like";
+}
+
 log.info("server", "Node Env: " + process.env.NODE_ENV);
+log.info("server", "Inside Container: " + (process.env.UPTIME_KUMA_IS_CONTAINER === "1"));
+
+if (process.env.UPTIME_KUMA_WS_ORIGIN_CHECK === "bypass") {
+    log.warn("server", "WebSocket Origin Check: " + process.env.UPTIME_KUMA_WS_ORIGIN_CHECK);
+}
 
 log.info("server", "Importing Node libraries");
 const fs = require("fs");
@@ -68,15 +84,18 @@ const notp = require("notp");
 const base32 = require("thirty-two");
 
 const { UptimeKumaServer } = require("./uptime-kuma-server");
-const server = UptimeKumaServer.getInstance(args);
+const server = UptimeKumaServer.getInstance();
 const io = module.exports.io = server.io;
 const app = server.app;
 
 log.info("server", "Importing this project modules");
 log.debug("server", "Importing Monitor");
 const Monitor = require("./model/monitor");
+const User = require("./model/user");
+
 log.debug("server", "Importing Settings");
-const { getSettings, setSettings, setting, initJWTSecret, checkLogin, startUnitTest, FBSD, doubleCheckPassword, startE2eTests } = require("./util-server");
+const { getSettings, setSettings, setting, initJWTSecret, checkLogin, startUnitTest, doubleCheckPassword, startE2eTests, shake256, SHAKE256_LENGTH
+} = require("./util-server");
 
 log.debug("server", "Importing Notification");
 const { Notification } = require("./notification");
@@ -99,19 +118,13 @@ const passwordHash = require("./password-hash");
 const checkVersion = require("./check-version");
 log.info("server", "Version: " + checkVersion.version);
 
-// If host is omitted, the server will accept connections on the unspecified IPv6 address (::) when IPv6 is available and the unspecified IPv4 address (0.0.0.0) otherwise.
-// Dual-stack support for (::)
-// Also read HOST if not FreeBSD, as HOST is a system environment variable in FreeBSD
-let hostEnv = FBSD ? null : process.env.HOST;
-let hostname = args.host || process.env.UPTIME_KUMA_HOST || hostEnv;
+const hostname = config.hostname;
 
 if (hostname) {
     log.info("server", "Custom hostname: " + hostname);
 }
 
-const port = [ args.port, process.env.UPTIME_KUMA_PORT, process.env.PORT, 3001 ]
-    .map(portValue => parseInt(portValue))
-    .find(portValue => !isNaN(portValue));
+const port = config.port;
 
 const disableFrameSameOrigin = !!process.env.UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN || args["disable-frame-sameorigin"] || false;
 const cloudflaredToken = args["cloudflared-token"] || process.env.UPTIME_KUMA_CLOUDFLARED_TOKEN || undefined;
@@ -147,8 +160,8 @@ const { apiKeySocketHandler } = require("./socket-handlers/api-key-socket-handle
 const { generalSocketHandler } = require("./socket-handlers/general-socket-handler");
 const { Settings } = require("./settings");
 const { CacheableDnsHttpAgent } = require("./cacheable-dns-http-agent");
-const { pluginsHandler } = require("./socket-handlers/plugins-handler");
 const apicache = require("./modules/apicache");
+const { resetChrome } = require("./monitor-types/real-browser-monitor-type");
 
 app.use(express.json());
 
@@ -162,12 +175,6 @@ app.use(function (req, res, next) {
 });
 
 /**
- * Use for decode the auth object
- * @type {null}
- */
-let jwtSecret = null;
-
-/**
  * Show Setup Page
  * @type {boolean}
  */
@@ -177,7 +184,6 @@ let needSetup = false;
     Database.init(args);
     await initDatabase(testMode);
     await server.initAfterDatabaseReady();
-    server.loadPlugins();
     server.entryPage = await Settings.get("entryPage");
     await StatusPage.loadDomainMappingList();
 
@@ -215,6 +221,7 @@ let needSetup = false;
     });
 
     if (isDev) {
+        app.use(express.urlencoded({ extended: true }));
         app.post("/test-webhook", async (request, response) => {
             log.debug("test", request.headers);
             log.debug("test", request.body);
@@ -269,7 +276,7 @@ let needSetup = false;
     log.info("server", "Adding socket handler");
     io.on("connection", async (socket) => {
 
-        sendInfo(socket);
+        sendInfo(socket, true);
 
         if (needSetup) {
             log.info("server", "Redirect to setup page");
@@ -286,7 +293,7 @@ let needSetup = false;
             log.info("auth", `Login by token. IP=${clientIP}`);
 
             try {
-                let decoded = jwt.verify(token, jwtSecret);
+                let decoded = jwt.verify(token, server.jwtSecret);
 
                 log.info("auth", "Username from JWT: " + decoded.username);
 
@@ -295,6 +302,11 @@ let needSetup = false;
                 ]);
 
                 if (user) {
+                    // Check if the password changed
+                    if (decoded.h !== shake256(user.password, SHAKE256_LENGTH)) {
+                        throw new Error("The token is invalid due to password change or old token");
+                    }
+
                     log.debug("auth", "afterLogin");
                     afterLogin(socket, user);
                     log.debug("auth", "afterLogin ok");
@@ -314,9 +326,10 @@ let needSetup = false;
                     });
                 }
             } catch (error) {
-
                 log.error("auth", `Invalid token. IP=${clientIP}`);
-
+                if (error.message) {
+                    log.error("auth", error.message, `IP=${clientIP}`);
+                }
                 callback({
                     ok: false,
                     msg: "Invalid token.",
@@ -355,9 +368,7 @@ let needSetup = false;
 
                     callback({
                         ok: true,
-                        token: jwt.sign({
-                            username: data.username,
-                        }, jwtSecret),
+                        token: User.createJWT(user, server.jwtSecret),
                     });
                 }
 
@@ -385,9 +396,7 @@ let needSetup = false;
 
                         callback({
                             ok: true,
-                            token: jwt.sign({
-                                username: data.username,
-                            }, jwtSecret),
+                            token: User.createJWT(user, server.jwtSecret),
                         });
                     } else {
 
@@ -639,8 +648,15 @@ let needSetup = false;
                 let notificationIDList = monitor.notificationIDList;
                 delete monitor.notificationIDList;
 
+                // Ensure status code ranges are strings
+                if (!monitor.accepted_statuscodes.every((code) => typeof code === "string")) {
+                    throw new Error("Accepted status codes are not all strings");
+                }
                 monitor.accepted_statuscodes_json = JSON.stringify(monitor.accepted_statuscodes);
                 delete monitor.accepted_statuscodes;
+
+                monitor.kafkaProducerBrokers = JSON.stringify(monitor.kafkaProducerBrokers);
+                monitor.kafkaProducerSaslOptions = JSON.stringify(monitor.kafkaProducerSaslOptions);
 
                 bean.import(monitor);
                 bean.user_id = socket.userID;
@@ -652,7 +668,10 @@ let needSetup = false;
                 await updateMonitorNotification(bean.id, notificationIDList);
 
                 await server.sendMonitorList(socket);
-                await startMonitor(socket.userID, bean.id);
+
+                if (monitor.active !== false) {
+                    await startMonitor(socket.userID, bean.id);
+                }
 
                 log.info("monitor", `Added Monitor: ${monitor.id} User ID: ${socket.userID}`);
 
@@ -676,6 +695,7 @@ let needSetup = false;
         // Edit a monitor
         socket.on("editMonitor", async (monitor, callback) => {
             try {
+                let removeGroupChildren = false;
                 checkLogin(socket);
 
                 let bean = await R.findOne("monitor", " id = ? ", [ monitor.id ]);
@@ -684,12 +704,22 @@ let needSetup = false;
                     throw new Error("Permission denied.");
                 }
 
-                // Check if Parent is Decendant (would cause endless loop)
+                // Check if Parent is Descendant (would cause endless loop)
                 if (monitor.parent !== null) {
                     const childIDs = await Monitor.getAllChildrenIDs(monitor.id);
                     if (childIDs.includes(monitor.parent)) {
                         throw new Error("Invalid Monitor Group");
                     }
+                }
+
+                // Remove children if monitor type has changed (from group to non-group)
+                if (bean.type === "group" && monitor.type !== bean.type) {
+                    removeGroupChildren = true;
+                }
+
+                // Ensure status code ranges are strings
+                if (!monitor.accepted_statuscodes.every((code) => typeof code === "string")) {
+                    throw new Error("Accepted status codes are not all strings");
                 }
 
                 bean.name = monitor.name;
@@ -702,6 +732,12 @@ let needSetup = false;
                 bean.headers = monitor.headers;
                 bean.basic_auth_user = monitor.basic_auth_user;
                 bean.basic_auth_pass = monitor.basic_auth_pass;
+                bean.timeout = monitor.timeout;
+                bean.oauth_client_id = monitor.oauth_client_id;
+                bean.oauth_client_secret = monitor.oauth_client_secret;
+                bean.oauth_auth_method = monitor.oauth_auth_method;
+                bean.oauth_token_url = monitor.oauth_token_url;
+                bean.oauth_scopes = monitor.oauth_scopes;
                 bean.tlsCa = monitor.tlsCa;
                 bean.tlsCert = monitor.tlsCert;
                 bean.tlsKey = monitor.tlsKey;
@@ -713,6 +749,7 @@ let needSetup = false;
                 bean.maxretries = monitor.maxretries;
                 bean.port = parseInt(monitor.port);
                 bean.keyword = monitor.keyword;
+                bean.invertKeyword = monitor.invertKeyword;
                 bean.ignoreTls = monitor.ignoreTls;
                 bean.expiryNotification = monitor.expiryNotification;
                 bean.upsideDown = monitor.upsideDown;
@@ -747,14 +784,29 @@ let needSetup = false;
                 bean.radiusCallingStationId = monitor.radiusCallingStationId;
                 bean.radiusSecret = monitor.radiusSecret;
                 bean.httpBodyEncoding = monitor.httpBodyEncoding;
+                bean.expectedValue = monitor.expectedValue;
+                bean.jsonPath = monitor.jsonPath;
+                bean.kafkaProducerTopic = monitor.kafkaProducerTopic;
+                bean.kafkaProducerBrokers = JSON.stringify(monitor.kafkaProducerBrokers);
+                bean.kafkaProducerAllowAutoTopicCreation = monitor.kafkaProducerAllowAutoTopicCreation;
+                bean.kafkaProducerSaslOptions = JSON.stringify(monitor.kafkaProducerSaslOptions);
+                bean.kafkaProducerMessage = monitor.kafkaProducerMessage;
+                bean.kafkaProducerSsl = monitor.kafkaProducerSsl;
+                bean.kafkaProducerAllowAutoTopicCreation =
+                    monitor.kafkaProducerAllowAutoTopicCreation;
+                bean.gamedigGivenPortOnly = monitor.gamedigGivenPortOnly;
 
                 bean.validate();
 
                 await R.store(bean);
 
+                if (removeGroupChildren) {
+                    await Monitor.unlinkAllChildren(monitor.id);
+                }
+
                 await updateMonitorNotification(bean.id, monitor.notificationIDList);
 
-                if (bean.isActive()) {
+                if (await bean.isActive()) {
                     await restartMonitor(socket.userID, bean.id);
                 }
 
@@ -897,6 +949,8 @@ let needSetup = false;
                     delete server.monitorList[monitorID];
                 }
 
+                const startTime = Date.now();
+
                 await R.exec("DELETE FROM monitor WHERE id = ? AND user_id = ? ", [
                     monitorID,
                     socket.userID,
@@ -904,6 +958,10 @@ let needSetup = false;
 
                 // Fix #2880
                 apicache.clear();
+
+                const endTime = Date.now();
+
+                log.info("DB", `Delete Monitor completed in : ${endTime - startTime} ms`);
 
                 callback({
                     ok: true,
@@ -1068,9 +1126,6 @@ let needSetup = false;
                     value,
                 ]);
 
-                // Cleanup unused Tags
-                await R.exec("delete from tag where ( select count(*) from monitor_tag mt where tag.id = mt.tag_id ) = 0");
-
                 callback({
                     ok: true,
                     msg: "Deleted Successfully.",
@@ -1098,6 +1153,8 @@ let needSetup = false;
 
                 let user = await doubleCheckPassword(socket, password.currentPassword);
                 await user.resetPassword(password.newPassword);
+
+                server.disconnectAllSocketClients(user.id, socket.id);
 
                 callback({
                     ok: true,
@@ -1148,6 +1205,9 @@ let needSetup = false;
                     await doubleCheckPassword(socket, currentPassword);
                 }
 
+                const previousChromeExecutable = await Settings.get("chromeExecutable");
+                const previousNSCDStatus = await Settings.get("nscd");
+
                 await setSettings("general", data);
                 server.entryPage = data.entryPage;
 
@@ -1156,6 +1216,21 @@ let needSetup = false;
                 // Also need to apply timezone globally
                 if (data.serverTimezone) {
                     await server.setTimezone(data.serverTimezone);
+                }
+
+                // If Chrome Executable is changed, need to reset the browser
+                if (previousChromeExecutable !== data.chromeExecutable) {
+                    log.info("settings", "Chrome executable is changed. Resetting Chrome...");
+                    await resetChrome();
+                }
+
+                // Update nscd status
+                if (previousNSCDStatus !== data.nscd) {
+                    if (data.nscd) {
+                        await server.startNSCDServices();
+                    } else {
+                        await server.stopNSCDServices();
+                    }
                 }
 
                 callback({
@@ -1327,6 +1402,7 @@ let needSetup = false;
 
                             // Define default values
                             let retryInterval = 0;
+                            let timeout = monitorListData[i].timeout || (monitorListData[i].interval * 0.8); // fallback to old value
 
                             /*
                             Only replace the default value with the backup file data for the specific version, where it appears the first time
@@ -1352,6 +1428,7 @@ let needSetup = false;
                                 basic_auth_pass: monitorListData[i].basic_auth_pass,
                                 authWorkstation: monitorListData[i].authWorkstation,
                                 authDomain: monitorListData[i].authDomain,
+                                timeout,
                                 interval: monitorListData[i].interval,
                                 retryInterval: retryInterval,
                                 resendInterval: monitorListData[i].resendInterval || 0,
@@ -1359,13 +1436,14 @@ let needSetup = false;
                                 maxretries: monitorListData[i].maxretries,
                                 port: monitorListData[i].port,
                                 keyword: monitorListData[i].keyword,
+                                invertKeyword: monitorListData[i].invertKeyword,
                                 ignoreTls: monitorListData[i].ignoreTls,
                                 upsideDown: monitorListData[i].upsideDown,
                                 maxredirects: monitorListData[i].maxredirects,
                                 accepted_statuscodes: monitorListData[i].accepted_statuscodes,
                                 dns_resolve_type: monitorListData[i].dns_resolve_type,
                                 dns_resolve_server: monitorListData[i].dns_resolve_server,
-                                notificationIDList: {},
+                                notificationIDList: monitorListData[i].notificationIDList,
                                 proxy_id: monitorListData[i].proxy_id || null,
                             };
 
@@ -1527,7 +1605,6 @@ let needSetup = false;
         maintenanceSocketHandler(socket);
         apiKeySocketHandler(socket);
         generalSocketHandler(socket, server);
-        pluginsHandler(socket, server);
 
         log.debug("server", "added all socket handlers");
 
@@ -1552,6 +1629,8 @@ let needSetup = false;
         console.error("Cannot listen: " + err.message);
         await shutdownFunction();
     });
+
+    server.start();
 
     server.httpServer.listen(port, hostname, () => {
         if (hostname) {
@@ -1630,6 +1709,7 @@ async function afterLogin(socket, user) {
     socket.join(user.id);
 
     let monitorList = await server.sendMonitorList(socket);
+    sendInfo(socket);
     server.sendMaintenanceList(socket);
     sendNotificationList(socket);
     sendProxyList(socket);
@@ -1700,7 +1780,7 @@ async function initDatabase(testMode = false) {
         needSetup = true;
     }
 
-    jwtSecret = jwtSecretBean.value;
+    server.jwtSecret = jwtSecretBean.value;
 }
 
 /**
@@ -1759,6 +1839,7 @@ async function pauseMonitor(userID, monitorID) {
 
     if (monitorID in server.monitorList) {
         server.monitorList[monitorID].stop();
+        server.monitorList[monitorID].active = 0;
     }
 }
 
@@ -1817,8 +1898,10 @@ gracefulShutdown(server.httpServer, {
 });
 
 // Catch unexpected errors here
-process.addListener("unhandledRejection", (error, promise) => {
+let unexpectedErrorHandler = (error, promise) => {
     console.trace(error);
     UptimeKumaServer.errorLog(error, false);
     console.error("If you keep encountering errors, please report to https://github.com/louislam/uptime-kuma/issues");
-});
+};
+process.addListener("unhandledRejection", unexpectedErrorHandler);
+process.addListener("uncaughtException", unexpectedErrorHandler);

@@ -3,7 +3,7 @@ const { R } = require("redbean-node");
 const { setSetting, setting } = require("./util-server");
 const { log, sleep } = require("../src/util");
 const knex = require("knex");
-const { PluginsManager } = require("./plugins-manager");
+const path = require("path");
 
 /**
  * Database & App Data Folder
@@ -22,7 +22,11 @@ class Database {
      */
     static uploadDir;
 
+    static screenshotDir;
+
     static path;
+
+    static dockerTLSDir;
 
     /**
      * @type {boolean}
@@ -70,6 +74,16 @@ class Database {
         "patch-monitor-tls.sql": true,
         "patch-maintenance-cron.sql": true,
         "patch-add-parent-monitor.sql": true,
+        "patch-add-invert-keyword.sql": true,
+        "patch-added-json-query.sql": true,
+        "patch-added-kafka-producer.sql": true,
+        "patch-add-certificate-expiry-status-page.sql": true,
+        "patch-monitor-oauth-cc.sql": true,
+        "patch-add-timeout-monitor.sql": true,
+        "patch-add-gamedig-given-port.sql": true,
+        "patch-notification-config.sql": true,
+        "patch-fix-kafka-producer-booleans.sql": true,
+        "patch-timeout.sql": true,
     };
 
     /**
@@ -88,21 +102,26 @@ class Database {
         // Data Directory (must be end with "/")
         Database.dataDir = process.env.DATA_DIR || args["data-dir"] || "./data/";
 
-        // Plugin feature is working only if the dataDir = "./data";
-        if (Database.dataDir !== "./data/") {
-            log.warn("PLUGIN", "Warning: In order to enable plugin feature, you need to use the default data directory: ./data/");
-            PluginsManager.disable = true;
-        }
-
-        Database.path = Database.dataDir + "kuma.db";
+        Database.path = path.join(Database.dataDir, "kuma.db");
         if (! fs.existsSync(Database.dataDir)) {
             fs.mkdirSync(Database.dataDir, { recursive: true });
         }
 
-        Database.uploadDir = Database.dataDir + "upload/";
+        Database.uploadDir = path.join(Database.dataDir, "upload/");
 
         if (! fs.existsSync(Database.uploadDir)) {
             fs.mkdirSync(Database.uploadDir, { recursive: true });
+        }
+
+        // Create screenshot dir
+        Database.screenshotDir = path.join(Database.dataDir, "screenshots/");
+        if (! fs.existsSync(Database.screenshotDir)) {
+            fs.mkdirSync(Database.screenshotDir, { recursive: true });
+        }
+
+        Database.dockerTLSDir = path.join(Database.dataDir, "docker-tls/");
+        if (! fs.existsSync(Database.dockerTLSDir)) {
+            fs.mkdirSync(Database.dockerTLSDir, { recursive: true });
         }
 
         log.info("db", `Data Dir: ${Database.dataDir}`);
@@ -161,12 +180,12 @@ class Database {
             await R.exec("PRAGMA journal_mode = WAL");
         }
         await R.exec("PRAGMA cache_size = -12000");
-        await R.exec("PRAGMA auto_vacuum = FULL");
+        await R.exec("PRAGMA auto_vacuum = INCREMENTAL");
 
         // This ensures that an operating system crash or power failure will not corrupt the database.
         // FULL synchronous is very safe, but it is also slower.
         // Read more: https://sqlite.org/pragma.html#pragma_synchronous
-        await R.exec("PRAGMA synchronous = FULL");
+        await R.exec("PRAGMA synchronous = NORMAL");
 
         if (!noLog) {
             log.info("db", "SQLite config:");

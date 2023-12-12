@@ -4,14 +4,16 @@ const fs = require("fs");
 const http = require("http");
 const { Server } = require("socket.io");
 const { R } = require("redbean-node");
-const { log } = require("../src/util");
+const { log, isDev } = require("../src/util");
 const Database = require("./database");
 const util = require("util");
 const { CacheableDnsHttpAgent } = require("./cacheable-dns-http-agent");
 const { Settings } = require("./settings");
 const dayjs = require("dayjs");
-const { PluginsManager } = require("./plugins-manager");
-// DO NOT IMPORT HERE IF THE MODULES USED `UptimeKumaServer.getInstance()`
+const childProcessAsync = require("promisify-child-process");
+const path = require("path");
+const { isSSL, sslKey, sslCert, sslKeyPassphrase } = require("./config");
+// DO NOT IMPORT HERE IF THE MODULES USED `UptimeKumaServer.getInstance()`, put at the bottom of this file instead.
 
 /**
  * `module.exports` (alias: `server`) should be inside this class, in order to avoid circular dependency issue.
@@ -48,12 +50,6 @@ class UptimeKumaServer {
     indexHTML = "";
 
     /**
-     * Plugins Manager
-     * @type {PluginsManager}
-     */
-    pluginsManager = null;
-
-    /**
      *
      * @type {{}}
      */
@@ -61,22 +57,23 @@ class UptimeKumaServer {
 
     };
 
-    static getInstance(args) {
+    /**
+     * Use for decode the auth object
+     * @type {null}
+     */
+    jwtSecret = null;
+
+    static getInstance() {
         if (UptimeKumaServer.instance == null) {
-            UptimeKumaServer.instance = new UptimeKumaServer(args);
+            UptimeKumaServer.instance = new UptimeKumaServer();
         }
         return UptimeKumaServer.instance;
     }
 
-    constructor(args) {
-        // SSL
-        const sslKey = args["ssl-key"] || process.env.UPTIME_KUMA_SSL_KEY || process.env.SSL_KEY || undefined;
-        const sslCert = args["ssl-cert"] || process.env.UPTIME_KUMA_SSL_CERT || process.env.SSL_CERT || undefined;
-        const sslKeyPassphrase = args["ssl-key-passphrase"] || process.env.UPTIME_KUMA_SSL_KEY_PASSPHRASE || process.env.SSL_KEY_PASSPHRASE || undefined;
-
+    constructor() {
         log.info("server", "Creating express and socket.io instance");
         this.app = express();
-        if (sslKey && sslCert) {
+        if (isSSL) {
             log.info("server", "Server Type: HTTPS");
             this.httpServer = https.createServer({
                 key: fs.readFileSync(sslKey),
@@ -98,11 +95,76 @@ class UptimeKumaServer {
             }
         }
 
-        this.io = new Server(this.httpServer);
+        // Set Monitor Types
+        UptimeKumaServer.monitorTypeList["real-browser"] = new RealBrowserMonitorType();
+        UptimeKumaServer.monitorTypeList["tailscale-ping"] = new TailscalePing();
+
+        // Allow all CORS origins (polling) in development
+        let cors = undefined;
+        if (isDev) {
+            cors = {
+                origin: "*",
+            };
+        }
+
+        this.io = new Server(this.httpServer, {
+            cors,
+            allowRequest: async (req, callback) => {
+                let transport;
+                // It should be always true, but just in case, because this property is not documented
+                if (req._query) {
+                    transport = req._query.transport;
+                } else {
+                    log.error("socket", "Ops!!! Cannot get transport type, assume that it is polling");
+                    transport = "polling";
+                }
+
+                const clientIP = await this.getClientIPwithProxy(req.connection.remoteAddress, req.headers);
+                log.info("socket", `New ${transport} connection, IP = ${clientIP}`);
+
+                // The following check is only for websocket connections, polling connections are already protected by CORS
+                if (transport === "polling") {
+                    callback(null, true);
+                } else if (transport === "websocket") {
+                    const bypass = process.env.UPTIME_KUMA_WS_ORIGIN_CHECK === "bypass";
+                    if (bypass) {
+                        log.info("auth", "WebSocket origin check is bypassed");
+                        callback(null, true);
+                    } else if (!req.headers.origin) {
+                        log.info("auth", "WebSocket with no origin is allowed");
+                        callback(null, true);
+                    } else {
+                        try {
+                            let host = req.headers.host;
+                            let origin = req.headers.origin;
+                            let originURL = new URL(origin);
+                            let xForwardedFor;
+                            if (await Settings.get("trustProxy")) {
+                                xForwardedFor = req.headers["x-forwarded-for"];
+                            }
+
+                            if (host !== originURL.host && xForwardedFor !== originURL.host) {
+                                callback(null, false);
+                                log.error("auth", `Origin (${origin}) does not match host (${host}), IP: ${clientIP}`);
+                            } else {
+                                callback(null, true);
+                            }
+                        } catch (e) {
+                            // Invalid origin url, probably not from browser
+                            callback(null, false);
+                            log.error("auth", `Invalid origin url (${origin}), IP: ${clientIP}`);
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /** Initialise app after the database has been set up */
     async initAfterDatabaseReady() {
+        // Static
+        this.app.use("/screenshots", express.static(Database.screenshotDir));
+
         await CacheableDnsHttpAgent.update();
 
         process.env.TZ = await this.getTimezone();
@@ -207,7 +269,7 @@ class UptimeKumaServer {
      * @param {boolean} outputToConsole Should the error also be output to console?
      */
     static errorLog(error, outputToConsole = true) {
-        const errorLogStream = fs.createWriteStream(Database.dataDir + "/error.log", {
+        const errorLogStream = fs.createWriteStream(path.join(Database.dataDir, "/error.log"), {
             flags: "a"
         });
 
@@ -230,23 +292,31 @@ class UptimeKumaServer {
     /**
      * Get the IP of the client connected to the socket
      * @param {Socket} socket
-     * @returns {string}
+     * @returns {Promise<string>}
      */
-    async getClientIP(socket) {
-        let clientIP = socket.client.conn.remoteAddress;
+    getClientIP(socket) {
+        return this.getClientIPwithProxy(socket.client.conn.remoteAddress, socket.client.conn.request.headers);
+    }
 
+    /**
+     *
+     * @param {string} clientIP
+     * @param {IncomingHttpHeaders} headers
+     * @returns {Promise<string>}
+     */
+    async getClientIPwithProxy(clientIP, headers) {
         if (clientIP === undefined) {
             clientIP = "";
         }
 
         if (await Settings.get("trustProxy")) {
-            const forwardedFor = socket.client.conn.request.headers["x-forwarded-for"];
+            const forwardedFor = headers["x-forwarded-for"];
 
             return (typeof forwardedFor === "string" ? forwardedFor.split(",")[0].trim() : null)
-                || socket.client.conn.request.headers["x-real-ip"]
-                || clientIP.replace(/^.*:/, "");
+                || headers["x-real-ip"]
+                || clientIP.replace(/^::ffff:/, "");
         } else {
-            return clientIP.replace(/^.*:/, "");
+            return clientIP.replace(/^::ffff:/, "");
         }
     }
 
@@ -257,13 +327,43 @@ class UptimeKumaServer {
      * @returns {Promise<string>}
      */
     async getTimezone() {
+        // From process.env.TZ
+        try {
+            if (process.env.TZ) {
+                this.checkTimezone(process.env.TZ);
+                return process.env.TZ;
+            }
+        } catch (e) {
+            log.warn("timezone", e.message + " in process.env.TZ");
+        }
+
         let timezone = await Settings.get("serverTimezone");
-        if (timezone) {
-            return timezone;
-        } else if (process.env.TZ) {
-            return process.env.TZ;
-        } else {
-            return dayjs.tz.guess();
+
+        // From Settings
+        try {
+            log.debug("timezone", "Using timezone from settings: " + timezone);
+            if (timezone) {
+                this.checkTimezone(timezone);
+                return timezone;
+            }
+        } catch (e) {
+            log.warn("timezone", e.message + " in settings");
+        }
+
+        // Guess
+        try {
+            let guess = dayjs.tz.guess();
+            log.debug("timezone", "Guessing timezone: " + guess);
+            if (guess) {
+                this.checkTimezone(guess);
+                return guess;
+            } else {
+                return "UTC";
+            }
+        } catch (e) {
+            // Guess failed, fall back to UTC
+            log.debug("timezone", "Guessed an invalid timezone. Use UTC as fallback");
+            return "UTC";
         }
     }
 
@@ -276,64 +376,105 @@ class UptimeKumaServer {
     }
 
     /**
+     * Throw an error if the timezone is invalid
+     * @param timezone
+     */
+    checkTimezone(timezone) {
+        try {
+            dayjs.utc("2013-11-18 11:55").tz(timezone).format();
+        } catch (e) {
+            throw new Error("Invalid timezone:" + timezone);
+        }
+    }
+
+    /**
      * Set the current server timezone and environment variables
      * @param {string} timezone
      */
     async setTimezone(timezone) {
+        this.checkTimezone(timezone);
         await Settings.set("serverTimezone", timezone, "general");
         process.env.TZ = timezone;
         dayjs.tz.setDefault(timezone);
     }
 
-    /** Stop the server */
+    /**
+     * TODO: Listen logic should be moved to here
+     * @returns {Promise<void>}
+     */
+    async start() {
+        let enable = await Settings.get("nscd");
+
+        if (enable || enable === null) {
+            await this.startNSCDServices();
+        }
+    }
+
+    /**
+     * Stop the server
+     * @returns {Promise<void>}
+     */
     async stop() {
+        let enable = await Settings.get("nscd");
 
-    }
-
-    loadPlugins() {
-        this.pluginsManager = new PluginsManager(this);
-    }
-
-    /**
-     *
-     * @returns {PluginsManager}
-     */
-    getPluginManager() {
-        return this.pluginsManager;
+        if (enable || enable === null) {
+            await this.stopNSCDServices();
+        }
     }
 
     /**
-     *
-     * @param {MonitorType} monitorType
+     * Start all system services (e.g. nscd)
+     * For now, only used in Docker
      */
-    addMonitorType(monitorType) {
-        if (monitorType instanceof MonitorType && monitorType.name) {
-            if (monitorType.name in UptimeKumaServer.monitorTypeList) {
-                log.error("", "Conflict Monitor Type name");
+    async startNSCDServices() {
+        if (process.env.UPTIME_KUMA_IS_CONTAINER) {
+            try {
+                log.info("services", "Starting nscd");
+                await childProcessAsync.exec("sudo service nscd start");
+            } catch (e) {
+                log.info("services", "Failed to start nscd");
             }
-            UptimeKumaServer.monitorTypeList[monitorType.name] = monitorType;
-        } else {
-            log.error("", "Invalid Monitor Type: " + monitorType.name);
         }
     }
 
     /**
-     *
-     * @param {MonitorType} monitorType
+     * Stop all system services
      */
-    removeMonitorType(monitorType) {
-        if (UptimeKumaServer.monitorTypeList[monitorType.name] === monitorType) {
-            delete UptimeKumaServer.monitorTypeList[monitorType.name];
-        } else {
-            log.error("", "Remove MonitorType failed: " + monitorType.name);
+    async stopNSCDServices() {
+        if (process.env.UPTIME_KUMA_IS_CONTAINER) {
+            try {
+                log.info("services", "Stopping nscd");
+                await childProcessAsync.exec("sudo service nscd stop");
+            } catch (e) {
+                log.info("services", "Failed to stop nscd");
+            }
         }
     }
 
+    /**
+     * Force connected sockets of a user to refresh and disconnect.
+     * Used for resetting password.
+     * @param {string} userID
+     * @param {string?} currentSocketID
+     */
+    disconnectAllSocketClients(userID, currentSocketID = undefined) {
+        for (const socket of this.io.sockets.sockets.values()) {
+            if (socket.userID === userID && socket.id !== currentSocketID) {
+                try {
+                    socket.emit("refresh");
+                    socket.disconnect();
+                } catch (e) {
+
+                }
+            }
+        }
+    }
 }
 
 module.exports = {
     UptimeKumaServer
 };
 
-// Must be at the end
-const { MonitorType } = require("./monitor-types/monitor-type");
+// Must be at the end to avoid circular dependencies
+const { RealBrowserMonitorType } = require("./monitor-types/real-browser-monitor-type");
+const { TailscalePing } = require("./monitor-types/tailscale-ping");
