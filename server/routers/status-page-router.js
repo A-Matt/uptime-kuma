@@ -45,7 +45,14 @@ router.get("/status/:slug", cache("5 minutes"), async (request, response) => {
         return;
     }
 
+    slug = slug.toLowerCase();
     await StatusPage.handleStatusPageResponse(response, server.indexHTML, slug);
+});
+
+router.get("/status/:slug/rss", cache("5 minutes"), async (request, response) => {
+    let slug = request.params.slug;
+    slug = slug.toLowerCase();
+    await StatusPage.handleStatusPageRSSResponse(response, slug);
 });
 
 router.get("/status", cache("5 minutes"), async (request, response) => {
@@ -62,6 +69,7 @@ router.get("/status-page", cache("5 minutes"), async (request, response) => {
 router.get("/api/status-page/:slug", cache("5 minutes"), async (request, response) => {
     allowDevAllOrigin(response);
     let slug = request.params.slug;
+    slug = slug.toLowerCase();
 
     try {
         // Get Status Page
@@ -94,6 +102,7 @@ router.get("/api/status-page/heartbeat/:slug", cache("1 minutes"), async (reques
         let uptimeList = {};
 
         let slug = request.params.slug;
+        slug = slug.toLowerCase();
         let statusPageID = await StatusPage.slugToID(slug);
 
         let monitorIDList = await R.getCol(`
@@ -136,6 +145,7 @@ router.get("/api/status-page/heartbeat/:slug", cache("1 minutes"), async (reques
 router.get("/api/status-page/:slug/manifest.json", cache("1440 minutes"), async (request, response) => {
     allowDevAllOrigin(response);
     let slug = request.params.slug;
+    slug = slug.toLowerCase();
 
     try {
         // Get Status Page
@@ -170,7 +180,8 @@ router.get("/api/status-page/:slug/manifest.json", cache("1440 minutes"), async 
 // overall status-page status badge
 router.get("/api/status-page/:slug/badge", cache("5 minutes"), async (request, response) => {
     allowDevAllOrigin(response);
-    const slug = request.params.slug;
+    let slug = request.params.slug;
+    slug = slug.toLowerCase();
     const statusPageID = await StatusPage.slugToID(slug);
     const {
         label,

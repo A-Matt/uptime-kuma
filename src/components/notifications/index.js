@@ -9,6 +9,7 @@ import CallMeBot from "./CallMeBot.vue";
 import SMSC from "./SMSC.vue";
 import DingDing from "./DingDing.vue";
 import Discord from "./Discord.vue";
+import Elks from "./46elks.vue";
 import Feishu from "./Feishu.vue";
 import FreeMobile from "./FreeMobile.vue";
 import GoogleChat from "./GoogleChat.vue";
@@ -29,6 +30,7 @@ import Nostr from "./Nostr.vue";
 import Ntfy from "./Ntfy.vue";
 import Octopush from "./Octopush.vue";
 import OneBot from "./OneBot.vue";
+import Onesender from "./Onesender.vue";
 import Opsgenie from "./Opsgenie.vue";
 import PagerDuty from "./PagerDuty.vue";
 import FlashDuty from "./FlashDuty.vue";
@@ -37,6 +39,7 @@ import PromoSMS from "./PromoSMS.vue";
 import Pushbullet from "./Pushbullet.vue";
 import PushDeer from "./PushDeer.vue";
 import Pushover from "./Pushover.vue";
+import PushPlus from "./PushPlus.vue";
 import Pushy from "./Pushy.vue";
 import RocketChat from "./RocketChat.vue";
 import ServerChan from "./ServerChan.vue";
@@ -61,7 +64,12 @@ import ZohoCliq from "./ZohoCliq.vue";
 import Splunk from "./Splunk.vue";
 import SevenIO from "./SevenIO.vue";
 import Whapi from "./Whapi.vue";
+import WAHA from "./WAHA.vue";
 import Cellsynt from "./Cellsynt.vue";
+import WPush from "./WPush.vue";
+import SIGNL4 from "./SIGNL4.vue";
+import SendGrid from "./SendGrid.vue";
+import YZJ from "./YZJ.vue";
 
 /**
  * Manage all notification form.
@@ -79,6 +87,7 @@ const NotificationFormList = {
     "smsc": SMSC,
     "DingDing": DingDing,
     "discord": Discord,
+    "Elks": Elks,
     "Feishu": Feishu,
     "FreeMobile": FreeMobile,
     "GoogleChat": GoogleChat,
@@ -98,6 +107,7 @@ const NotificationFormList = {
     "ntfy": Ntfy,
     "octopush": Octopush,
     "OneBot": OneBot,
+    "Onesender": Onesender,
     "Opsgenie": Opsgenie,
     "PagerDuty": PagerDuty,
     "FlashDuty": FlashDuty,
@@ -107,10 +117,12 @@ const NotificationFormList = {
     "PushByTechulus": TechulusPush,
     "PushDeer": PushDeer,
     "pushover": Pushover,
+    "PushPlus": PushPlus,
     "pushy": Pushy,
     "rocket.chat": RocketChat,
     "serwersms": SerwerSMS,
     "signal": Signal,
+    "SIGNL4": SIGNL4,
     "SMSManager": SMSManager,
     "SMSPartner": SMSPartner,
     "slack": Slack,
@@ -130,8 +142,12 @@ const NotificationFormList = {
     "ZohoCliq": ZohoCliq,
     "SevenIO": SevenIO,
     "whapi": Whapi,
+    "waha": WAHA,
     "gtxmessaging": GtxMessaging,
     "Cellsynt": Cellsynt,
+    "WPush": WPush,
+    "SendGrid": SendGrid,
+    "YZJ": YZJ,
 };
 
 export default NotificationFormList;

@@ -11,6 +11,7 @@ const CallMeBot = require("./notification-providers/call-me-bot");
 const SMSC = require("./notification-providers/smsc");
 const DingDing = require("./notification-providers/dingding");
 const Discord = require("./notification-providers/discord");
+const Elks = require("./notification-providers/46elks");
 const Feishu = require("./notification-providers/feishu");
 const FreeMobile = require("./notification-providers/freemobile");
 const GoogleChat = require("./notification-providers/google-chat");
@@ -38,10 +39,12 @@ const PromoSMS = require("./notification-providers/promosms");
 const Pushbullet = require("./notification-providers/pushbullet");
 const PushDeer = require("./notification-providers/pushdeer");
 const Pushover = require("./notification-providers/pushover");
+const PushPlus = require("./notification-providers/pushplus");
 const Pushy = require("./notification-providers/pushy");
 const RocketChat = require("./notification-providers/rocket-chat");
 const SerwerSMS = require("./notification-providers/serwersms");
 const Signal = require("./notification-providers/signal");
+const SIGNL4 = require("./notification-providers/signl4");
 const Slack = require("./notification-providers/slack");
 const SMSPartner = require("./notification-providers/smspartner");
 const SMSEagle = require("./notification-providers/smseagle");
@@ -62,8 +65,13 @@ const ServerChan = require("./notification-providers/serverchan");
 const ZohoCliq = require("./notification-providers/zoho-cliq");
 const SevenIO = require("./notification-providers/sevenio");
 const Whapi = require("./notification-providers/whapi");
+const WAHA = require("./notification-providers/waha");
 const GtxMessaging = require("./notification-providers/gtx-messaging");
 const Cellsynt = require("./notification-providers/cellsynt");
+const Onesender = require("./notification-providers/onesender");
+const Wpush = require("./notification-providers/wpush");
+const SendGrid = require("./notification-providers/send-grid");
+const YZJ = require("./notification-providers/yzj");
 
 class Notification {
 
@@ -92,6 +100,7 @@ class Notification {
             new SMSC(),
             new DingDing(),
             new Discord(),
+            new Elks(),
             new Feishu(),
             new FreeMobile(),
             new GoogleChat(),
@@ -111,6 +120,7 @@ class Notification {
             new Ntfy(),
             new Octopush(),
             new OneBot(),
+            new Onesender(),
             new Opsgenie(),
             new PagerDuty(),
             new FlashDuty(),
@@ -119,11 +129,13 @@ class Notification {
             new Pushbullet(),
             new PushDeer(),
             new Pushover(),
+            new PushPlus(),
             new Pushy(),
             new RocketChat(),
             new ServerChan(),
             new SerwerSMS(),
             new Signal(),
+            new SIGNL4(),
             new SMSManager(),
             new SMSPartner(),
             new Slack(),
@@ -143,8 +155,12 @@ class Notification {
             new ZohoCliq(),
             new SevenIO(),
             new Whapi(),
+            new WAHA(),
             new GtxMessaging(),
             new Cellsynt(),
+            new Wpush(),
+            new SendGrid(),
+            new YZJ()
         ];
         for (let item of list) {
             if (! item.name) {
